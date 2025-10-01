@@ -1,0 +1,61 @@
+# Backend Dockerfile for Butagira & Co. Advocates Admin Dashboard
+# Multi-stage build for optimized production image
+
+# Stage 1: Build stage
+FROM node:20-alpine AS builder
+
+# Install dependencies needed for native modules
+RUN apk add --no-cache python3 make g++
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN npm run build
+
+# Stage 2: Production stage
+FROM node:20-alpine AS production
+
+# Create app user for security
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nestjs -u 1001
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install only production dependencies
+RUN npm install --only=production && npm cache clean --force
+
+# Copy built application from builder stage
+COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
+COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
+
+# Add labels for better container management
+LABEL maintainer="Butagira & Co. Advocates"
+LABEL description="Backend API for Butagira & Co. Advocates Admin Dashboard"
+LABEL version="1.0.0"
+
+# Switch to non-root user
+USER nestjs
+
+# Expose port 3001
+EXPOSE 3001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD node healthcheck.js || exit 1
+
+# Start the application
+CMD ["node", "dist/main.js"]
